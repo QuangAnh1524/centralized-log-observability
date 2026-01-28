@@ -1,0 +1,39 @@
+# Vector Agent Configuration - Thu thập log từ file
+data_dir = "/var/lib/vector"
+# 1. Nguồn đọc file log
+[sources.demo_app_logs]
+type = "file"
+include = ["/var/log/demo/*.log"]
+read_from = "beginning"
+
+# 2. Xử lý: Parse JSON an toàn 
+[transforms.parse_json]
+type = "remap"
+inputs = ["demo_app_logs"]
+source = '''
+  # Thử parse JSON, nếu lỗi thì giữ nguyên message dạng text
+  parsed, err = parse_json(.message)
+  if err == null {
+    . = parsed
+  } else {
+    .error = "json_parse_failed"
+  }
+  
+  .source_host = get_hostname!()
+  .ingest_timestamp = now()
+'''
+
+# 3. Output bắn vào Kafka
+[sinks.to_kafka]
+type = "kafka"
+inputs = ["parse_json"]
+bootstrap_servers = "kafka:9092"
+topic = "raw-logs"
+encoding.codec = "json"
+
+
+# 4. Debug console
+[sinks.debug_console]
+type = "console"
+inputs = ["parse_json"]
+encoding.codec = "json"

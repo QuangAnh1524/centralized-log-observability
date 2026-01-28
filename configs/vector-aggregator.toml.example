@@ -1,0 +1,85 @@
+data_dir = "/var/lib/vector"
+
+# 1. Nguồn: Kafka
+[sources.from_kafka]
+type = "kafka"
+bootstrap_servers = "kafka:9092"
+group_id = "vector-aggregator-group"
+topics = ["raw-logs"]
+decoding.codec = "json"
+
+# 2. Xử lý: Chuẩn hóa dữ liệu (VRL fully corrected)
+[transforms.normalize_log]
+type = "remap"
+inputs = ["from_kafka"]
+source = '''
+  # --- 1. Timestamp ---
+  .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
+
+  # --- 2. Định danh Request ---
+  .traceId = get(., ["traceId"]) ?? get(., ["trace_id"]) ?? ""
+  .spanId = get(., ["spanId"]) ?? get(., ["span_id"]) ?? ""
+
+  # --- 3. Resource & Service ---
+  .service = get(.resource, ["service.name"]) ?? get(., ["service"]) ?? "unknown_service"
+  .host = get(.resource, ["host.name"]) ?? get(., ["source_host"]) ?? "unknown_host"
+  .version = get(.resource, ["service.version"]) ?? "v0"
+
+  # --- 4. Metric quan trọng ---
+  # Handle get() result first, then convert
+  latency_raw = get(.attributes, ["latency_ms"]) ?? get(., ["latencyms"]) ?? 0
+  .latencyms = to_int(latency_raw) ?? 0
+  
+  # Status code
+  status_code_raw = get(.attributes, ["http.status_code"]) ?? 0
+  .http_status = to_string!(status_code_raw)
+  
+  # Business Code
+  .business_code = get(.attributes, ["business_code"]) ?? "OK"
+
+  # --- 5. Severity ---
+  # Handle get() result first, then upcase
+  severity_raw = get(., ["severity"]) ?? "info"
+  .severity = upcase(severity_raw) ?? "INFO"
+
+  # --- 6. Body ---
+  .body = get(., ["body"]) ?? get(., ["message"]) ?? ""
+'''
+
+# 3. Tính Metrics (Log-to-Metric)
+[transforms.log_to_metrics]
+type = "log_to_metric"
+inputs = ["normalize_log"]
+
+[[transforms.log_to_metrics.metrics]]
+type = "counter"
+field = "severity"
+name = "smartlog_log_count"
+namespace = "smartlog"
+tags.service = "{{service}}"
+tags.level = "{{severity}}"
+tags.host = "{{host}}"
+
+[[transforms.log_to_metrics.metrics]]
+type = "histogram"
+field = "latencyms"
+name = "smartlog_latency_ms"
+namespace = "smartlog"
+tags.service = "{{service}}"
+
+# 4. Sink: Đẩy vào Loki
+[sinks.to_loki]
+type = "loki"
+inputs = ["normalize_log"]
+endpoint = "http://loki:3100"
+encoding.codec = "json"
+labels.service = "{{ service }}"
+labels.host = "{{ host }}"
+labels.level = "{{ severity }}"
+labels.status = "{{ http_status }}"
+
+# 5. Sink: Debug Console
+[sinks.console]
+type = "console"
+inputs = ["log_to_metrics"]
+encoding.codec = "json"

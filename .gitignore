@@ -1,0 +1,138 @@
+# =================================
+# Smart Log Lab
+# =================================
+
+# ---------------------------------
+# Config Files (chứa credentials!)
+# Ignore file thật, chỉ track file .example
+# ---------------------------------
+configs/*.yml
+configs/*.toml
+!configs/*.example
+
+# ---------------------------------
+# Data Directories (CRITICAL!)
+# Contains runtime data, logs, and sensitive information
+# ---------------------------------
+kafka/data/
+minio/data/
+loki/data/
+grafana/data/
+vector-aggregator-data/
+
+# ---------------------------------
+# Large Binary Files
+# Avoid pushing large archives to GitHub
+# ---------------------------------
+*.tar
+*.tar.gz
+*.tar.bz2
+*.zip
+*.rar
+*.7z
+
+# ---------------------------------
+# Environment & Secrets
+# NEVER commit secrets to GitHub!
+# ---------------------------------
+.env
+.env.local
+.env.*.local
+*.env
+.secrets
+secrets/
+*.key
+*.pem
+*.crt
+credentials/
+*.credentials
+
+# ---------------------------------
+# Docker
+# ---------------------------------
+*.log
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ---------------------------------
+# Python (for demo-app)
+# ---------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+env/
+ENV/
+
+# ---------------------------------
+# IDE & Editor
+# ---------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+
+# ---------------------------------
+# OS Files
+# ---------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---------------------------------
+# Logs & Debug
+# ---------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------------------------------
+# Temporary Files
+# ---------------------------------
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# ---------------------------------
+# Vector Specific
+# ---------------------------------
+vector-agent/vector-deploy/data/
+*.checkpoint
+
+# ---------------------------------
+# Grafana
+# ---------------------------------
+grafana/provisioning/dashboards/*.json.bak

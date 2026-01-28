@@ -1,0 +1,62 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: s3
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/index_cache
+  aws:
+    endpoint: minio:9000
+    bucketnames: loki-chunks
+    # ⚠️ THAY ĐỔI CREDENTIALS Ở ĐÂY
+    access_key_id: YOUR_MINIO_ACCESS_KEY
+    secret_access_key: YOUR_MINIO_SECRET_KEY
+    s3forcepathstyle: true
+    insecure: true # Cần thiết vì minio chạy http (không phải https)
+
+ruler:
+  storage:
+    type: s3
+    s3:
+      # ⚠️ THAY ĐỔI CREDENTIALS Ở ĐÂY
+      s3: http://YOUR_ACCESS_KEY:YOUR_SECRET_KEY@minio:9000/loki-ruler
+      s3forcepathstyle: true
+
+limits_config:
+  retention_period: 744h  # 31 ngày sẽ xóa (cho lab )
+  ingestion_rate_mb: 10
+  ingestion_burst_size_mb: 20
+  # Sửa deletion_mode từ true thành giá trị hợp lệ
+  deletion_mode: filter-and-delete  # Cho phép xóa log theo filter
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true  # Bật retention để áp dụng retention_period
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: s3
