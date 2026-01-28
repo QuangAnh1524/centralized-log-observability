@@ -44,6 +44,42 @@ A **modern observability stack** for centralized log collection, processing, and
 
 ---
 
+## 📥 Prerequisites
+
+### Download Vector Binary
+
+> ⚠️ **Note**: The Vector binary is not included in this repository due to GitHub's 100MB file size limit. You need to download it manually.
+
+**Option 1: Download from official website**
+
+```bash
+# Linux/macOS
+curl --proto '=https' --tlsv1.2 -sSfL https://sh.vector.dev | bash
+
+# Or download specific version (0.52.0)
+# Visit: https://vector.dev/releases/0.52.0/download/
+```
+
+**Option 2: Download and extract manually**
+
+```bash
+# Linux x86_64
+wget https://packages.timber.io/vector/0.52.0/vector-0.52.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf vector-0.52.0-x86_64-unknown-linux-gnu.tar.gz
+cp vector-0.52.0-x86_64-unknown-linux-gnu/bin/vector vector-agent/vector-deploy/bin/
+
+# Windows
+# Download from: https://packages.timber.io/vector/0.52.0/vector-0.52.0-x86_64-pc-windows-msvc.zip
+```
+
+**Option 3: Use Docker (recommended for production)**
+
+```bash
+docker pull timberio/vector:0.52.0-alpine
+```
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Clone Repository
