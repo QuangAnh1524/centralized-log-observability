@@ -136,3 +136,4 @@ vector-agent/vector-deploy/data/
 # Grafana
 # ---------------------------------
 grafana/provisioning/dashboards/*.json.bak
+vector-agent/vector-deploy/bin/vector
