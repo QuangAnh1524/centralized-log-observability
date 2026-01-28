@@ -89,7 +89,18 @@ git clone https://github.com/YOUR_USERNAME/smart_log-lab.git
 cd smart_log-lab
 ```
 
-### 2. Setup Configuration
+### 2. Setup Environment Variables
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your credentials
+# MINIO_ROOT_USER=your_username
+# MINIO_ROOT_PASSWORD=your_strong_password
+```
+
+### 3. Setup Configuration
 
 ```bash
 cd configs
@@ -102,19 +113,19 @@ cp vector-aggregator.toml.example vector-aggregator.toml
 # Edit loki-config.yml with your MinIO credentials
 ```
 
-### 3. Start Services
+### 4. Start Services
 
 ```bash
 docker-compose -f docker-compose.kafka_minio_loki_aggregator.yml up -d
 ```
 
-### 4. Create MinIO Bucket
+### 5. Create MinIO Bucket
 
 1. Open MinIO Console: http://localhost:9001
 2. Login with your credentials
 3. Create bucket: `loki-chunks`
 
-### 5. Access Services
+### 6. Access Services
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
