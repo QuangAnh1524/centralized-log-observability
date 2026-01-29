@@ -1,6 +1,5 @@
 data_dir = "/var/lib/vector"
 
-# 1. Nguồn: Kafka
 [sources.from_kafka]
 type = "kafka"
 bootstrap_servers = "kafka:9092"
@@ -8,78 +7,131 @@ group_id = "vector-aggregator-group"
 topics = ["raw-logs"]
 decoding.codec = "json"
 
-# 2. Xử lý: Chuẩn hóa dữ liệu (VRL fully corrected)
 [transforms.normalize_log]
 type = "remap"
 inputs = ["from_kafka"]
 source = '''
-  # --- 1. Timestamp ---
-  .timestamp = parse_timestamp(.timestamp, "%+") ?? now()
-
-  # --- 2. Định danh Request ---
-  .traceId = get(., ["traceId"]) ?? get(., ["trace_id"]) ?? ""
-  .spanId = get(., ["spanId"]) ?? get(., ["span_id"]) ?? ""
-
-  # --- 3. Resource & Service ---
-  .service = get(.resource, ["service.name"]) ?? get(., ["service"]) ?? "unknown_service"
-  .host = get(.resource, ["host.name"]) ?? get(., ["source_host"]) ?? "unknown_host"
-  .version = get(.resource, ["service.version"]) ?? "v0"
-
-  # --- 4. Metric quan trọng ---
-  # Handle get() result first, then convert
-  latency_raw = get(.attributes, ["latency_ms"]) ?? get(., ["latencyms"]) ?? 0
-  .latencyms = to_int(latency_raw) ?? 0
+  # --- MẶC ĐỊNH: GÁN LÀ RÁC (L5) TRƯỚC ---
+  .maturity = "L5_MEANINGLESS"
+  .log_type = "text_legacy"
   
-  # Status code
-  status_code_raw = get(.attributes, ["http.status_code"]) ?? 0
-  .http_status = to_string!(status_code_raw)
+  # --- KIỂM TRA ĐẶC ĐIỂM NHẬN DẠNG ---
+  # Agent đã parse JSON, nên ta kiểm tra sự tồn tại của các trường
+  has_trace   = exists(.traceId) || exists(.trace_id) || exists(.spanId)
+  has_metric  = exists(.attributes.latencyms) || exists(.latencyms)
+  has_severity = exists(.severity)
   
-  # Business Code
-  .business_code = get(.attributes, ["business_code"]) ?? "OK"
+  # =======================================================
+  # NHÁNH 1: LOG CÓ CẤU TRÚC (JSON) -> L0, L1, L2
+  # =======================================================
+  if has_trace || has_severity {
+      .log_type = "json"
+      
+      # CẤP 0: Đầy đủ Context & Metric
+      if has_trace && has_metric {
+          .maturity = "L0_IDEAL"
+          
+      # CẤP 1: Đủ Trace, Thiếu Metric
+      } else if has_trace {
+          .maturity = "L1_TRACE"
+          
+      # CẤP 2: Đủ định danh (Severity), Thiếu Trace & Metric
+      } else {
+          .maturity = "L2_BASIC"
+      }
+      
+      # Chuẩn hóa Metric nếu có
+      .latencyms = to_int(.attributes.latencyms) ?? 0
 
-  # --- 5. Severity ---
-  # Handle get() result first, then upcase
-  severity_raw = get(., ["severity"]) ?? "info"
-  .severity = upcase(severity_raw) ?? "INFO"
+  # =======================================================
+  # NHÁNH 2: LOG TEXT (UNSTRUCTURED) -> L3, L4, L5
+  # =======================================================
+  } else {
+      # Định nghĩa Regex để bắt các trường hợp
+      
+      # Regex L3 (Chuẩn): Timestamp + Level + Service + Body
+      # VD: 2026-01-28 12:00 ERROR [App] Message...
+      re_L3_java = r'(?s)^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<lvl>\w+) \[(?P<svc>.*?)\] (?P<body>.*)$'
+      re_L3_sys  = r'^(?P<ts>\w+ \d+ \d+:\d+:\d+) (?P<host>\S+) (?P<svc>\S+): (?P<body>.*)$'
+      
+      # Regex L4 (Sai lệch): Timestamp + Level INFO nhưng nội dung chết chóc
+      # Hoặc chỉ có Timestamp + Body (Thiếu level)
+      re_L4_bad  = r'^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<body>.*)$'
 
-  # --- 6. Body ---
-  .body = get(., ["body"]) ?? get(., ["message"]) ?? ""
+      # Thử Parse
+      p_java, e_java = parse_regex(.message, re_L3_java)
+      p_sys, e_sys   = parse_regex(.message, re_L3_sys)
+      p_L4, e_L4     = parse_regex(.message, re_L4_bad)
+      
+      # Logic Phân loại Text
+      if e_java == null {
+          # CẤP 3: Text Legacy chuẩn (Format đúng, nhưng thiếu context hạ tầng)
+          .maturity = "L3_LEGACY"
+          .timestamp = p_java.ts
+          .severity = p_java.lvl
+          .service = p_java.svc
+          .body = p_java.body
+          .latencyms = 0
+          
+      } else if e_sys == null {
+          # CẤP 3: Syslog chuẩn
+          .maturity = "L3_LEGACY"
+          .timestamp = now()
+          .service = p_sys.svc
+          .body = p_sys.body
+          .severity = "INFO"
+          
+      } else if e_L4 == null {
+          # CẤP 4: Có Timestamp nhưng thiếu Severity hoặc format sai
+          .maturity = "L4_FALSE_NEGATIVE"
+          .body = p_L4.body
+          # Kiểm tra nội dung nguy hiểm mà không có level
+          if match(downcase(.body), r'error|fail|exception|crash') {
+              .severity = "CRITICAL_SUSPECT"
+          } else {
+              .severity = "UNKNOWN"
+          }
+      
+      } 
+      # Nếu không khớp gì cả -> Rơi vào CẤP 5 (Mặc định)
+  }
+
+  # =======================================================
+  # XỬ LÝ HÀNH ĐỘNG (ACTION) THEO TÀI LIỆU
+  # =======================================================
+  
+  # CẤP 4 & 5: TỪ CHỐI TÍCH HỢP -> Gắn nhãn REJECTED
+  if .maturity == "L4_FALSE_NEGATIVE" {
+      .service  = "REJECTED_LOGS"
+      .severity = "CRITICAL" # Báo động để Dev sửa code
+      
+  } else if .maturity == "L5_MEANINGLESS" {
+      .service  = "REJECTED_LOGS"
+      .severity = "REJECT_LOG" # Log rác
+      .body = .message # Giữ nguyên text gốc
+      
+  } else {
+      # CẤP 0, 1, 2, 3: SẴN SÀNG TÍCH HỢP
+      .service = get(., ["service"]) ?? "legacy-app"
+  }
+
+  # =======================================================
+  # CHUẨN HÓA CUỐI CÙNG
+  # =======================================================
+  .host = get(., ["host"]) ?? get(., ["source_host"]) ?? "gateway"
+  
+  sev_raw = get(., ["severity"]) ?? "INFO"
+  .severity = upcase!(to_string!(sev_raw))
+  
+  ts_raw = get(., ["timestamp"]) ?? ""
+  .timestamp = parse_timestamp(to_string!(ts_raw), "%+") ?? now()
 '''
 
-# 3. Tính Metrics (Log-to-Metric)
-[transforms.log_to_metrics]
-type = "log_to_metric"
-inputs = ["normalize_log"]
-
-[[transforms.log_to_metrics.metrics]]
-type = "counter"
-field = "severity"
-name = "smartlog_log_count"
-namespace = "smartlog"
-tags.service = "{{service}}"
-tags.level = "{{severity}}"
-tags.host = "{{host}}"
-
-[[transforms.log_to_metrics.metrics]]
-type = "histogram"
-field = "latencyms"
-name = "smartlog_latency_ms"
-namespace = "smartlog"
-tags.service = "{{service}}"
-
-# 4. Sink: Đẩy vào Loki
 [sinks.to_loki]
 type = "loki"
 inputs = ["normalize_log"]
 endpoint = "http://loki:3100"
 encoding.codec = "json"
 labels.service = "{{ service }}"
-labels.host = "{{ host }}"
 labels.level = "{{ severity }}"
-labels.status = "{{ http_status }}"
-
-# 5. Sink: Debug Console
-[sinks.console]
-type = "console"
-inputs = ["log_to_metrics"]
-encoding.codec = "json"
+labels.maturity = "{{ maturity }}"
