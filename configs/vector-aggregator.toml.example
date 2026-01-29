@@ -103,7 +103,7 @@ source = '''
   # CẤP 4 & 5: TỪ CHỐI TÍCH HỢP -> Gắn nhãn REJECTED
   if .maturity == "L4_FALSE_NEGATIVE" {
       .service  = "REJECTED_LOGS"
-      .severity = "CRITICAL" # Báo động để Dev sửa code
+      .severity = "CRITICAL_DEV_NEED_TO_UPDATE_CODE" # Báo động để Dev sửa code
       
   } else if .maturity == "L5_MEANINGLESS" {
       .service  = "REJECTED_LOGS"
